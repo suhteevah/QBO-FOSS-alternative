@@ -114,6 +114,8 @@ AGPL-3.0 — Free to use and modify; derivative SaaS must open-source.
 
 ---
 
+---
+
 ## Support This Project
 
 If you find this project useful, consider buying me a coffee! Your support helps me keep building and sharing open-source tools.
