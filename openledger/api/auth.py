@@ -18,7 +18,6 @@ router = APIRouter()
 class RegisterRequest(LoginRequest):
     full_name: str | None = None
     organization_name: str | None = None
-    organization_id: uuid.UUID | None = None
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -45,25 +44,23 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
 
-    # Create or use existing organization
-    if data.organization_id:
-        org_result = await db.execute(
-            select(Organization).where(Organization.id == data.organization_id)
-        )
-        org = org_result.scalar_one_or_none()
-        if not org:
-            raise HTTPException(status_code=404, detail="Organization not found")
-    else:
-        org = Organization(name=data.organization_name or f"{data.email}'s Organization")
-        db.add(org)
-        await db.flush()
+    # Password strength validation
+    if len(data.password) < 8:
+        raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
 
+    # Always create a new organization — users cannot join arbitrary orgs via registration.
+    # To add users to an existing org, an admin must use the POST /users (invite) endpoint.
+    org = Organization(name=data.organization_name or f"{data.email}'s Organization")
+    db.add(org)
+    await db.flush()
+
+    # First user of a new org is always admin
     user = User(
         organization_id=org.id,
         email=data.email,
         hashed_password=hash_password(data.password),
         full_name=data.full_name,
-        role=UserRole.ADMIN,  # First user is admin
+        role=UserRole.ADMIN,
     )
     db.add(user)
     await db.flush()

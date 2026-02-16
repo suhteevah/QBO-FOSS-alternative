@@ -1,0 +1,39 @@
+# Version control
+.git
+.gitignore
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+*.egg-info
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Frontend build artifacts (built inside container)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Documentation
+*.md
+docs/
+
+# Docker
+docker-compose*.yml
+Dockerfile
+
+# OS files
+.DS_Store
+Thumbs.db

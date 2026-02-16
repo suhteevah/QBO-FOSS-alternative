@@ -30,6 +30,11 @@ function upload<T>(path: string, file: File): Promise<T> {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   }).then(async (res) => {
+    if (res.status === 401) {
+      localStorage.removeItem('token')
+      window.location.href = '/login'
+      throw new Error('Unauthorized')
+    }
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || `HTTP ${res.status}`)

@@ -24,9 +24,12 @@ app = FastAPI(
     docs_url="/docs" if settings.debug else None,
 )
 
+# In debug mode, allow all origins for local development.
+# In production, nginx proxies everything so CORS is not needed,
+# but set explicit origins if you deploy frontend and API on different domains.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.debug else [],
+    allow_origins=["*"] if settings.debug else ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

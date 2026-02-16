@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
 import { auth as authApi } from './api'
 
 interface User {
@@ -25,13 +25,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem('token'))
   const [loading, setLoading] = useState(!!token)
 
+  const logout = useCallback(() => {
+    localStorage.removeItem('token')
+    setToken(null)
+    setUser(null)
+  }, [])
+
+  // Hydrate user from stored token on mount
   useEffect(() => {
-    if (token) {
-      authApi.me().then(setUser).catch(() => {
-        localStorage.removeItem('token')
-        setToken(null)
-      }).finally(() => setLoading(false))
-    }
+    if (!token) return
+
+    let cancelled = false
+    authApi.me()
+      .then((me) => {
+        if (!cancelled) setUser(me)
+      })
+      .catch(() => {
+        // Token is invalid or expired — clear it but DON'T trigger a
+        // redirect here. The 401 interceptor in api.ts handles redirects
+        // for active requests. This only handles stale tokens on app load.
+        if (!cancelled) {
+          localStorage.removeItem('token')
+          setToken(null)
+          setUser(null)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
   }, [token])
 
   const login = async (email: string, password: string) => {
@@ -48,12 +71,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(res.access_token)
     const me = await authApi.me()
     setUser(me)
-  }
-
-  const logout = () => {
-    localStorage.removeItem('token')
-    setToken(null)
-    setUser(null)
   }
 
   return (

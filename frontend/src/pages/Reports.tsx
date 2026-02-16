@@ -1,15 +1,36 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
-import { BarChart3, Download } from 'lucide-react'
+import { BarChart3 } from 'lucide-react'
 
 type ReportType = 'pnl' | 'balance_sheet' | 'trial_balance'
+
+interface ReportLineItem {
+  account_number: string
+  account_name: string
+  amount: string | number
+}
+
+interface ReportSection {
+  title: string
+  items: ReportLineItem[]
+  subtotal: string | number
+}
+
+interface ReportData {
+  report_type: string
+  period: string
+  generated_at: string
+  accounting_basis: string
+  sections: ReportSection[]
+  net_total: string | number
+}
 
 export default function Reports() {
   const [reportType, setReportType] = useState<ReportType>('pnl')
   const [startDate, setStartDate] = useState(new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0])
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
   const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0])
-  const [report, setReport] = useState<any>(null)
+  const [report, setReport] = useState<ReportData | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -18,7 +39,7 @@ export default function Reports() {
     setError('')
     setReport(null)
     try {
-      let data: any
+      let data: ReportData
       if (reportType === 'pnl') {
         data = await api.reports.profitLoss(startDate, endDate)
       } else if (reportType === 'balance_sheet') {
@@ -34,28 +55,10 @@ export default function Reports() {
     }
   }
 
-  function renderSection(title: string, items: any[], totalLabel: string, total: number | string) {
-    return (
-      <div className="mb-6">
-        <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">{title}</h3>
-        <div className="space-y-1">
-          {items?.map((item: any, i: number) => (
-            <div key={i} className="flex justify-between py-1.5 px-2 hover:bg-gray-50 rounded">
-              <span className="text-gray-700">
-                {item.account_number && <span className="text-gray-400 font-mono mr-2">{item.account_number}</span>}
-                {item.account_name || item.name}
-              </span>
-              <span className="font-mono text-gray-900">${Number(item.balance ?? item.amount ?? 0).toFixed(2)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex justify-between py-2 px-2 mt-1 border-t border-gray-200 font-semibold">
-          <span>{totalLabel}</span>
-          <span className="font-mono">${Number(total).toFixed(2)}</span>
-        </div>
-      </div>
-    )
-  }
+  // Highlight sections that are summary-only (no line items, just a subtotal)
+  const SUMMARY_TITLES = new Set([
+    'Gross Profit', 'Operating Income', 'Net Income',
+  ])
 
   return (
     <div className="space-y-6">
@@ -109,74 +112,73 @@ export default function Reports() {
       {/* Report Output */}
       {report && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-          {reportType === 'pnl' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Profit & Loss Statement</h2>
-              <p className="text-sm text-gray-500 mb-6">{report.start_date} to {report.end_date}</p>
-              {renderSection('Revenue', report.revenue?.accounts || [], 'Total Revenue', report.revenue?.total ?? 0)}
-              {renderSection('Cost of Goods Sold', report.cogs?.accounts || [], 'Total COGS', report.cogs?.total ?? 0)}
-              <div className="flex justify-between py-2 px-2 bg-gray-50 rounded font-bold text-gray-900 mb-6">
-                <span>Gross Profit</span>
-                <span className="font-mono">${Number(report.gross_profit ?? 0).toFixed(2)}</span>
-              </div>
-              {renderSection('Operating Expenses', report.operating_expenses?.accounts || [], 'Total Operating Expenses', report.operating_expenses?.total ?? 0)}
-              <div className="flex justify-between py-3 px-2 bg-brand-50 rounded-lg font-bold text-brand-700 text-lg">
-                <span>Net Income</span>
-                <span className="font-mono">${Number(report.net_income ?? 0).toFixed(2)}</span>
-              </div>
-            </div>
-          )}
+          {/* Report Header */}
+          <div className="mb-6">
+            <h2 className="text-lg font-bold text-gray-900">
+              {report.report_type === 'profit_loss' && 'Profit & Loss Statement'}
+              {report.report_type === 'balance_sheet' && 'Balance Sheet'}
+              {report.report_type === 'trial_balance' && 'Trial Balance'}
+            </h2>
+            <p className="text-sm text-gray-500">{report.period}</p>
+            <p className="text-xs text-gray-400 mt-1">
+              Basis: {report.accounting_basis} | Generated: {new Date(report.generated_at).toLocaleString()}
+            </p>
+          </div>
 
-          {reportType === 'balance_sheet' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Balance Sheet</h2>
-              <p className="text-sm text-gray-500 mb-6">As of {report.as_of}</p>
-              {renderSection('Assets', report.assets?.accounts || [], 'Total Assets', report.assets?.total ?? 0)}
-              {renderSection('Liabilities', report.liabilities?.accounts || [], 'Total Liabilities', report.liabilities?.total ?? 0)}
-              {renderSection('Equity', report.equity?.accounts || [], 'Total Equity', report.equity?.total ?? 0)}
-              <div className="flex justify-between py-3 px-2 bg-brand-50 rounded-lg font-bold text-brand-700 text-lg">
-                <span>Total Liabilities + Equity</span>
-                <span className="font-mono">
-                  ${(Number(report.liabilities?.total ?? 0) + Number(report.equity?.total ?? 0)).toFixed(2)}
-                </span>
-              </div>
-            </div>
-          )}
+          {/* Sections */}
+          {report.sections.map((section, idx) => {
+            const isSummary = SUMMARY_TITLES.has(section.title) && section.items.length === 0
 
-          {reportType === 'trial_balance' && (
-            <div>
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Trial Balance</h2>
-              <p className="text-sm text-gray-500 mb-6">As of {report.as_of}</p>
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-4 py-2 text-gray-500">Account</th>
-                    <th className="text-right px-4 py-2 text-gray-500">Debit</th>
-                    <th className="text-right px-4 py-2 text-gray-500">Credit</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {(report.accounts || []).map((a: any, i: number) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-4 py-2">
-                        <span className="font-mono text-gray-400 mr-2">{a.account_number}</span>
-                        {a.account_name}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono">{Number(a.debit) > 0 ? `$${Number(a.debit).toFixed(2)}` : ''}</td>
-                      <td className="px-4 py-2 text-right font-mono">{Number(a.credit) > 0 ? `$${Number(a.credit).toFixed(2)}` : ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-                <tfoot className="border-t-2 border-gray-300 font-bold">
-                  <tr>
-                    <td className="px-4 py-2">Total</td>
-                    <td className="px-4 py-2 text-right font-mono">${Number(report.total_debits ?? 0).toFixed(2)}</td>
-                    <td className="px-4 py-2 text-right font-mono">${Number(report.total_credits ?? 0).toFixed(2)}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+            // Summary-only rows (like Gross Profit, Operating Income)
+            if (isSummary) {
+              return (
+                <div key={idx} className="flex justify-between py-3 px-2 bg-brand-50 rounded-lg font-bold text-brand-700 text-lg mb-4">
+                  <span>{section.title}</span>
+                  <span className="font-mono">${Number(section.subtotal).toFixed(2)}</span>
+                </div>
+              )
+            }
+
+            // Regular section with line items
+            return (
+              <div key={idx} className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                  {section.title}
+                </h3>
+                {section.items.length > 0 && (
+                  <div className="space-y-1">
+                    {section.items.map((item, i) => (
+                      <div key={i} className="flex justify-between py-1.5 px-2 hover:bg-gray-50 rounded">
+                        <span className="text-gray-700">
+                          {item.account_number && (
+                            <span className="text-gray-400 font-mono mr-2">{item.account_number}</span>
+                          )}
+                          {item.account_name}
+                        </span>
+                        <span className="font-mono text-gray-900">
+                          ${Number(item.amount).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex justify-between py-2 px-2 mt-1 border-t border-gray-200 font-semibold">
+                  <span>Total {section.title}</span>
+                  <span className="font-mono">${Number(section.subtotal).toFixed(2)}</span>
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Net Total */}
+          <div className="flex justify-between py-3 px-3 bg-gray-900 rounded-lg font-bold text-white text-lg mt-4">
+            <span>
+              {report.report_type === 'profit_loss' && 'Net Income'}
+              {report.report_type === 'balance_sheet' && 'Total Liabilities + Equity'}
+              {report.report_type === 'trial_balance' && 'Net Difference (Debits - Credits)'}
+            </span>
+            <span className="font-mono">${Number(report.net_total).toFixed(2)}</span>
+          </div>
         </div>
       )}
     </div>

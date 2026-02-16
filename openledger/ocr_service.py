@@ -29,7 +29,7 @@ class OCRService:
 
     def __init__(self, organization_id: uuid.UUID):
         self.org_id = organization_id
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
     async def process_receipt(
         self,
@@ -118,7 +118,7 @@ class OCRService:
             media_type = "image/jpeg"
 
         try:
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model=settings.sonnet_model,
                 max_tokens=1000,
                 messages=[

@@ -131,7 +131,7 @@ class ReceiptResponse(BaseModel):
     transaction_date: Optional[date]
     total_amount: Optional[Decimal]
     tax_amount: Optional[Decimal]
-    line_items_json: Optional[dict]
+    line_items_json: Optional[list | dict] = None
     ocr_confidence: Optional[Decimal]
     is_processed: bool
     created_at: datetime

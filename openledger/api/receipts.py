@@ -3,10 +3,11 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from openledger.database import get_db
-from openledger.models import User
+from openledger.models import Receipt, User
 from openledger.schemas import (
     JournalEntryResponse,
     ReceiptClassifyResponse,
@@ -16,6 +17,21 @@ from openledger.schemas import (
 from openledger.auth import get_current_user
 
 router = APIRouter()
+
+
+@router.get("/", response_model=list[ReceiptResponse])
+async def list_receipts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all receipts for the current organization."""
+    result = await db.execute(
+        select(Receipt)
+        .where(Receipt.organization_id == current_user.organization_id)
+        .order_by(Receipt.created_at.desc())
+        .limit(200)
+    )
+    return result.scalars().all()
 
 
 @router.post("/upload", response_model=ReceiptResponse, status_code=201)

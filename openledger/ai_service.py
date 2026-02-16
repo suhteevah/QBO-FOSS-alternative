@@ -34,7 +34,7 @@ class AIService:
     def __init__(self, db: AsyncSession, organization_id: uuid.UUID):
         self.db = db
         self.org_id = organization_id
-        self.client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
         self.model = settings.sonnet_model
 
     # ── Transaction Classification ──────────────────────────
@@ -90,7 +90,7 @@ If unsure, set confidence below 0.5. Prefer specificity over generic categories.
         start_time = time.time()
 
         try:
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=500,
                 messages=[{"role": "user", "content": prompt}],
@@ -218,7 +218,7 @@ RULES:
         start_time = time.time()
 
         try:
-            response = self.client.messages.create(
+            response = await self.client.messages.create(
                 model=self.model,
                 max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}],
@@ -240,22 +240,32 @@ RULES:
                     "cached": False,
                 }
 
-            # Execute the query (read-only)
+            # SECURITY: Execute AI-generated SQL in a read-only transaction
+            # with org_id forced into the query as a bind parameter,
+            # row limit, and statement timeout to prevent abuse.
             try:
-                result = await self.db.execute(
-                    text(sql),
-                    {"org_id": str(self.org_id), **parsed.get("parameters", {})},
-                )
-                rows = [dict(row._mapping) for row in result.fetchall()]
-                # Convert non-serializable types
-                for row in rows:
-                    for k, v in row.items():
-                        if isinstance(v, Decimal):
-                            row[k] = float(v)
-                        elif isinstance(v, (datetime,)):
-                            row[k] = v.isoformat()
-                        elif isinstance(v, uuid.UUID):
-                            row[k] = str(v)
+                if ":org_id" not in sql:
+                    rows = [{"error": "Query rejected: must filter by organization_id"}]
+                else:
+                    # Force a statement timeout + read-only transaction to limit damage
+                    await self.db.execute(text("SET LOCAL statement_timeout = '5s'"))
+                    await self.db.execute(text("SET LOCAL default_transaction_read_only = ON"))
+
+                    # Only pass org_id — never pass AI-generated parameters
+                    result = await self.db.execute(
+                        text(sql + " LIMIT 200"),
+                        {"org_id": str(self.org_id)},
+                    )
+                    rows = [dict(row._mapping) for row in result.fetchall()]
+                    # Convert non-serializable types
+                    for row in rows:
+                        for k, v in row.items():
+                            if isinstance(v, Decimal):
+                                row[k] = float(v)
+                            elif isinstance(v, (datetime,)):
+                                row[k] = v.isoformat()
+                            elif isinstance(v, uuid.UUID):
+                                row[k] = str(v)
             except Exception as e:
                 rows = [{"error": f"Query execution failed: {str(e)}"}]
 
@@ -376,12 +386,32 @@ RULES:
         return result.scalar_one_or_none()
 
     def _is_safe_sql(self, sql: str) -> bool:
-        """Validate that AI-generated SQL is read-only."""
-        dangerous = ["insert", "update", "delete", "drop", "alter", "create", "truncate", "grant", "revoke"]
+        """Validate that AI-generated SQL is read-only and cannot access system resources."""
+        dangerous_keywords = [
+            "insert", "update", "delete", "drop", "alter", "create", "truncate",
+            "grant", "revoke", "copy", "execute", "exec",
+            # Prevent system function access
+            "pg_read_file", "pg_write_file", "pg_ls_dir", "pg_stat_file",
+            "lo_import", "lo_export", "dblink", "pg_sleep",
+            # Prevent information_schema / pg_catalog abuse
+            "pg_catalog", "information_schema", "pg_roles", "pg_shadow",
+            "pg_authid", "pg_user",
+        ]
         sql_lower = sql.lower().strip()
+
+        # Must start with SELECT (no CTEs with mutations)
         if not sql_lower.startswith("select"):
             return False
-        for keyword in dangerous:
+
+        # No semicolons (prevent multi-statement attacks)
+        if ";" in sql_lower:
+            return False
+
+        # No comments (prevent bypass via comment injection)
+        if "--" in sql_lower or "/*" in sql_lower:
+            return False
+
+        for keyword in dangerous_keywords:
             if re.search(rf'\b{keyword}\b', sql_lower):
                 return False
         return True

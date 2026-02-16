@@ -31,9 +31,16 @@ class Settings(BaseSettings):
     default_fiscal_year_start: int = 1
 
     # App
-    debug: bool = True
+    debug: bool = False
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
 settings = Settings()
+
+# Startup guard: refuse to start with the default secret key in non-debug mode
+if not settings.debug and settings.secret_key in ("change-me-in-production", "dev-secret-change-in-production"):
+    raise RuntimeError(
+        "CRITICAL: SECRET_KEY is still set to the default value. "
+        "Set a strong random SECRET_KEY environment variable before running in production."
+    )

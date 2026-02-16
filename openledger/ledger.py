@@ -179,13 +179,15 @@ class LedgerEngine:
         if not entry:
             raise LedgerError(f"Journal entry {entry_id} not found")
 
+        # Capture before_state BEFORE mutation
+        old_status = entry.status
         entry.status = EntryStatus.VOIDED
 
         await self._audit(
             action="void",
             entity_type="journal_entry",
             entity_id=entry.id,
-            before_state={"status": entry.status.value},
+            before_state={"status": old_status.value},
             after_state={"status": EntryStatus.VOIDED.value, "reason": reason},
             user_id=user_id,
         )
