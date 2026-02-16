@@ -14,6 +14,7 @@ from openledger.api import (
     audit,
     auth,
     reconciliation,
+    periods,
 )
 
 app = FastAPI(
@@ -41,6 +42,7 @@ app.include_router(receipts.router, prefix="/api/receipts", tags=["Receipts & OC
 app.include_router(ai_query.router, prefix="/api/ai", tags=["AI Query"])
 app.include_router(audit.router, prefix="/api/audit", tags=["Audit Log"])
 app.include_router(reconciliation.router, prefix="/api/reconciliation", tags=["Reconciliation"])
+app.include_router(periods.router, prefix="/api/periods", tags=["Accounting Periods"])
 
 
 @app.get("/health")

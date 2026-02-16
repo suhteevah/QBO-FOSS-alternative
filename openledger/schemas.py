@@ -138,6 +138,21 @@ class ReceiptResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ReceiptClassifyResponse(BaseModel):
+    """AI classification result for a receipt."""
+    receipt_id: str
+    suggested_account_id: Optional[str] = None
+    suggested_account_name: str = ""
+    suggested_account_number: str = ""
+    confidence: float = 0.0
+    reasoning: str = ""
+
+
+class ReceiptCreateEntryRequest(BaseModel):
+    """Optional override for receipt-to-entry creation."""
+    account_id: Optional[UUID] = None
+
+
 # ── AI Query ────────────────────────────────────────────────
 
 class AIQueryRequest(BaseModel):
@@ -210,3 +225,117 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     role: str
+
+
+# ── Accounting Periods ─────────────────────────────────────
+
+class PeriodCreate(BaseModel):
+    name: str = Field(..., max_length=50, examples=["2025-Q1"])
+    start_date: date
+    end_date: date
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.end_date <= self.start_date:
+            raise ValueError("end_date must be after start_date")
+        return self
+
+
+class PeriodResponse(BaseModel):
+    id: UUID
+    name: str
+    start_date: date
+    end_date: date
+    status: str
+    closed_by: Optional[UUID]
+    closed_at: Optional[datetime]
+    model_config = {"from_attributes": True}
+
+
+class PeriodReadiness(BaseModel):
+    period_id: UUID
+    unapproved_entries: int
+    unreconciled_transactions: int
+    draft_entries: int
+    ready_to_close: bool
+
+
+# ── Transaction Pipeline ──────────────────────────────────
+
+class ClassifyRequest(BaseModel):
+    """Request body for batch classification."""
+    limit: int = Field(default=50, ge=1, le=500, description="Max transactions to classify")
+
+
+class ClassifiedTransactionDetail(BaseModel):
+    id: str
+    description_raw: str
+    ai_category: str
+    confidence: float
+    suggested_account_id: Optional[str] = None
+
+
+class ClassifyResponse(BaseModel):
+    classified: int
+    errors: int
+    transactions: list[ClassifiedTransactionDetail]
+
+
+class CreateEntriesRequest(BaseModel):
+    """Request body for batch journal entry creation."""
+    confidence_threshold: float = Field(
+        default=0.7, ge=0.0, le=1.0,
+        description="Minimum AI confidence to auto-create entries",
+    )
+
+
+class CreatedEntryDetail(BaseModel):
+    transaction_id: str
+    journal_entry_id: str
+    amount: str
+    status: str
+    description: str
+
+
+class CreateEntriesResponse(BaseModel):
+    entries_created: int
+    errors: int
+    entries: list[CreatedEntryDetail]
+
+
+class SingleEntryRequest(BaseModel):
+    """Request body for creating a journal entry from a single transaction."""
+    account_id: Optional[UUID] = Field(
+        default=None,
+        description="Override the AI-suggested account with a specific account ID",
+    )
+
+
+class SingleEntryResponse(BaseModel):
+    transaction_id: str
+    journal_entry_id: str
+    amount: str
+    status: str
+    description: str
+
+
+class ProcessBatchRequest(BaseModel):
+    """Request body for the full pipeline (classify + create entries)."""
+    limit: int = Field(default=50, ge=1, le=500, description="Max transactions to classify")
+    confidence_threshold: float = Field(
+        default=0.7, ge=0.0, le=1.0,
+        description="Minimum AI confidence to auto-create entries",
+    )
+
+
+class PipelineSummary(BaseModel):
+    transactions_classified: int
+    classification_errors: int
+    entries_created: int
+    entry_errors: int
+
+
+class ProcessBatchResponse(BaseModel):
+    classification: ClassifyResponse
+    entry_creation: CreateEntriesResponse
+    summary: PipelineSummary
