@@ -11,11 +11,12 @@
 #
 # What it does:
 #   1. Detects your environment (Docker available? Python? Node?)
-#   2. Clones the repo (or updates if already cloned)
-#   3. Runs the appropriate installer:
-#      - Docker mode (production) if Docker is found
+#   2. Installs Docker automatically if not found (Linux/macOS)
+#   3. Clones the repo (or updates if already cloned)
+#   4. Runs the appropriate installer:
+#      - Docker mode (production) if Docker is found/installed
 #      - Dev mode (SQLite) if Python + Node are found
-#   4. Starts the app and opens it in your browser
+#   5. Starts the app and opens it in your browser
 #
 # Options:
 #   OPENLEDGER_MODE=docker   Force Docker install
@@ -91,7 +92,80 @@ echo -e "    Python 3.11+: $([ "$HAS_PYTHON" = true ] && echo -e "${GREEN}✓ ($
 echo -e "    Node.js 18+:  $([ "$HAS_NODE" = true ] && echo -e "${GREEN}✓ ($(node -v))${NC}" || echo -e "${RED}✗${NC}")"
 echo ""
 
-# ── Step 2: Choose Install Mode ──────────────────────────────
+# ── Step 2: Install Docker if needed ───────────────────────────
+
+install_docker() {
+    info "Docker not found — attempting automatic install..."
+    echo ""
+
+    OS_TYPE="$(uname -s)"
+    case "$OS_TYPE" in
+        Linux)
+            if [ "$(id -u)" -ne 0 ]; then
+                warn "Root privileges required to install Docker."
+                info "Re-running Docker install with sudo..."
+                if ! command -v sudo >/dev/null 2>&1; then
+                    err "sudo is not available. Please install Docker manually:
+  https://docs.docker.com/engine/install/"
+                fi
+                sudo sh -c 'curl -fsSL https://get.docker.com | sh'
+            else
+                curl -fsSL https://get.docker.com | sh
+            fi
+
+            # Start Docker daemon if not running
+            if command -v systemctl >/dev/null 2>&1; then
+                sudo systemctl start docker 2>/dev/null || true
+                sudo systemctl enable docker 2>/dev/null || true
+            fi
+
+            # Add current user to docker group so sudo isn't needed
+            if [ "$(id -u)" -ne 0 ]; then
+                sudo usermod -aG docker "$USER" 2>/dev/null || true
+                warn "Added $USER to the docker group. You may need to log out and back in."
+            fi
+            ;;
+        Darwin)
+            if command -v brew >/dev/null 2>&1; then
+                info "Installing Docker Desktop via Homebrew..."
+                brew install --cask docker
+                info "Starting Docker Desktop..."
+                open -a Docker
+                info "Waiting for Docker to start (this may take a minute)..."
+                for i in $(seq 1 30); do
+                    if docker info >/dev/null 2>&1; then break; fi
+                    sleep 2
+                done
+            else
+                err "Please install Docker Desktop manually:
+  https://www.docker.com/products/docker-desktop/
+
+Or install Homebrew first:
+  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            fi
+            ;;
+        *)
+            err "Unsupported OS ($OS_TYPE). Please install Docker manually:
+  https://docs.docker.com/get-docker/"
+            ;;
+    esac
+
+    # Re-check Docker after install
+    if docker info >/dev/null 2>&1; then
+        if docker compose version >/dev/null 2>&1 || docker-compose version >/dev/null 2>&1; then
+            HAS_DOCKER=true
+            log "Docker installed and running!"
+        else
+            err "Docker installed but Docker Compose is missing. Please install Docker Compose:
+  https://docs.docker.com/compose/install/"
+        fi
+    else
+        err "Docker installation completed but Docker daemon is not responding.
+Please start Docker and re-run this script."
+    fi
+}
+
+# ── Step 3: Choose Install Mode ──────────────────────────────
 
 if [ "$MODE" = "auto" ]; then
     if [ "$HAS_DOCKER" = true ]; then
@@ -102,32 +176,27 @@ if [ "$MODE" = "auto" ]; then
         info "Auto-selected: ${BOLD}Dev/SQLite${NC} mode (no Docker found)"
     else
         echo ""
-        err "Cannot install: need either Docker OR (Python 3.11+ AND Node.js 18+)
-
-  Option A — Install Docker:
-    https://docs.docker.com/get-docker/
-
-  Option B — Install Python + Node:
-    Python: https://www.python.org/downloads/
-    Node:   https://nodejs.org/
-"
+        info "Neither Docker nor Python+Node found."
+        info "Installing Docker for production mode..."
+        install_docker
+        MODE="docker"
     fi
 fi
 
-# Validate chosen mode
+# If Docker mode requested but Docker missing, install it
 if [ "$MODE" = "docker" ] && [ "$HAS_DOCKER" = false ]; then
-    err "Docker mode requested but Docker is not available"
+    install_docker
 fi
 if [ "$MODE" = "dev" ]; then
     [ "$HAS_PYTHON" = false ] && err "Dev mode requires Python 3.11+"
     [ "$HAS_NODE" = false ] && err "Dev mode requires Node.js 18+"
 fi
 
-# ── Step 3: Check for git ────────────────────────────────────
+# ── Step 4: Check for git ────────────────────────────────────
 
 command -v git >/dev/null 2>&1 || err "git is required. Install it: https://git-scm.com/"
 
-# ── Step 4: Clone or Update Repo ─────────────────────────────
+# ── Step 5: Clone or Update Repo ─────────────────────────────
 
 if [ -d "$INSTALL_DIR/.git" ]; then
     info "Existing installation found — pulling latest..."
@@ -140,7 +209,7 @@ else
     log "Repository cloned"
 fi
 
-# ── Step 5: Run Installer ────────────────────────────────────
+# ── Step 6: Run Installer ────────────────────────────────────
 
 if [ "$MODE" = "docker" ]; then
     info "Running Docker production installer..."
