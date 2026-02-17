@@ -160,6 +160,42 @@ class PeriodStatus(str, PyEnum):
     CLOSED = "closed"
 
 
+# ── API Keys ──────────────────────────────────────────────
+
+class APIKey(Base):
+    """
+    Long-lived API keys for programmatic/mobile access.
+    The raw key is shown once on creation; only the SHA-256 hash is stored.
+    Key format: ol_<random> (prefix makes keys identifiable in logs).
+    """
+    __tablename__ = "api_keys"
+
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(GUID(), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+
+    name = Column(String(255), nullable=False)            # Human label, e.g. "Android Phone"
+    key_prefix = Column(String(11), nullable=False)        # "ol_" + first 8 random chars
+    key_hash = Column(String(64), nullable=False, unique=True)  # SHA-256 of full raw key
+
+    # Platform-aware: future-proofs for iOS, web, CLI clients
+    platform = Column(String(20), nullable=False, default="web")    # "android", "ios", "web", "cli"
+    device_info = Column(String(255), nullable=True)                # "Pixel 8 Pro", "iPhone 15", etc.
+
+    expires_at = Column(DateTime, nullable=True)           # Null = never expires
+    last_used_at = Column(DateTime, nullable=True)
+    is_revoked = Column(Boolean, default=False)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User")
+
+    __table_args__ = (
+        Index("ix_api_key_hash", "key_hash"),
+        Index("ix_api_key_user", "user_id"),
+    )
+
+
 # ── Organizations ───────────────────────────────────────────
 
 class Organization(Base):

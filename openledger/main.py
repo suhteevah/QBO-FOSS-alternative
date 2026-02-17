@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openledger.config import settings
 from openledger.api import (
     accounts,
+    api_keys,
     transactions,
     journal_entries,
     reports,
@@ -54,6 +55,7 @@ app.add_middleware(
 
 # ── API Routes ──────────────────────────────────────────────
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+app.include_router(api_keys.router, prefix="/api/keys", tags=["API Keys"])
 app.include_router(accounts.router, prefix="/api/accounts", tags=["Chart of Accounts"])
 app.include_router(transactions.router, prefix="/api/transactions", tags=["Transactions"])
 app.include_router(journal_entries.router, prefix="/api/journal", tags=["Journal Entries"])

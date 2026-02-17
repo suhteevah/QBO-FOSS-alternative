@@ -339,3 +339,49 @@ class ProcessBatchResponse(BaseModel):
     classification: ClassifyResponse
     entry_creation: CreateEntriesResponse
     summary: PipelineSummary
+
+
+# ── API Keys ──────────────────────────────────────────────
+
+class APIKeyCreate(BaseModel):
+    name: str = Field(..., max_length=255, examples=["My Android Phone"])
+    platform: str = Field(
+        default="web", max_length=20,
+        description="Client platform: android, ios, web, cli",
+        examples=["android"],
+    )
+    device_info: Optional[str] = Field(
+        default=None, max_length=255,
+        description="Device model string, e.g. 'Pixel 8 Pro', 'iPhone 15'",
+        examples=["Pixel 8 Pro"],
+    )
+    expires_in_days: Optional[int] = Field(
+        default=None, ge=1, le=3650,
+        description="Days until expiry. Null = never expires.",
+    )
+
+
+class APIKeyCreateResponse(BaseModel):
+    """Returned ONCE on creation. The raw_key is never shown again."""
+    id: UUID
+    name: str
+    key_prefix: str
+    raw_key: str
+    platform: str
+    device_info: Optional[str]
+    expires_at: Optional[datetime]
+    created_at: datetime
+
+
+class APIKeyResponse(BaseModel):
+    """Safe representation for listing (no raw key)."""
+    id: UUID
+    name: str
+    key_prefix: str
+    platform: str
+    device_info: Optional[str]
+    expires_at: Optional[datetime]
+    last_used_at: Optional[datetime]
+    is_revoked: bool
+    created_at: datetime
+    model_config = {"from_attributes": True}

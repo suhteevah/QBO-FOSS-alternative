@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     accounting_basis: str = "accrual"
     default_fiscal_year_start: int = 1
 
+    # API Keys
+    api_key_default_expiry_days: int | None = None  # None = keys never expire by default
+
     # App
     debug: bool = False
 
