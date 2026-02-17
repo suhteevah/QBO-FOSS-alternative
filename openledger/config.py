@@ -1,5 +1,6 @@
 """OpenLedger configuration via environment variables."""
 
+import os
 from enum import Enum
 from pydantic_settings import BaseSettings
 
@@ -9,10 +10,15 @@ class OCREngine(str, Enum):
     SONNET_VISION = "sonnet-vision"
 
 
+# Resolve a default SQLite path relative to project root
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_DEFAULT_SQLITE = os.path.join(_PROJECT_ROOT, "openledger.db")
+
+
 class Settings(BaseSettings):
-    # Database
-    database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/openledger"
-    database_url_sync: str = "postgresql://user:pass@localhost:5432/openledger"
+    # Database — defaults to SQLite for easy local dev / demo
+    database_url: str = f"sqlite+aiosqlite:///{_DEFAULT_SQLITE}"
+    database_url_sync: str = f"sqlite:///{_DEFAULT_SQLITE}"
 
     # Auth
     secret_key: str = "change-me-in-production"

@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies for psycopg2 and tesseract
+# Install system dependencies for PostgreSQL driver and tesseract OCR
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
@@ -10,11 +10,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY openledger/ ./openledger/
+COPY alembic/ ./alembic/
+COPY alembic.ini .
 
 # Create non-root user
 RUN addgroup --system appuser && adduser --system --ingroup appuser appuser \
-    && chown -R appuser:appuser /app
+    && mkdir -p /app/uploads && chown -R appuser:appuser /app
 USER appuser
 
 EXPOSE 8000

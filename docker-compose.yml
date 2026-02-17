@@ -5,7 +5,6 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-openledger}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-openledger}
-    # Do NOT expose 5432 to host in production — only expose for local dev
     ports:
       - "${DB_PORT:-5432}:5432"
     volumes:
@@ -17,6 +16,7 @@ services:
       retries: 5
     networks:
       - backend
+    restart: unless-stopped
 
   api:
     build: .
@@ -27,16 +27,16 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-openledger}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-openledger}
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-openledger}:${POSTGRES_PASSWORD:?err}@db:5432/${POSTGRES_DB:-openledger}
-      DEBUG: "${DEBUG:-true}"
     depends_on:
       db:
         condition: service_healthy
     command: >
       bash -c "alembic upgrade head &&
-               uvicorn openledger.main:app --host 0.0.0.0 --port 8000 --reload"
+               uvicorn openledger.main:app --host 0.0.0.0 --port 8000"
     networks:
       - backend
       - frontend
+    restart: unless-stopped
 
   frontend:
     build: ./frontend
@@ -46,6 +46,7 @@ services:
       - api
     networks:
       - frontend
+    restart: unless-stopped
 
 volumes:
   pgdata:

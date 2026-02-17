@@ -26,6 +26,14 @@ Thumbs.db
 *.key
 *.pem
 
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+
+# Uploaded files
+uploads/
+
 # Windows reserved device names (cause git add failures)
 nul
 con

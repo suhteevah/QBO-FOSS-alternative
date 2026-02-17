@@ -7,12 +7,12 @@ pydantic-settings>=2.7.0
 # Database
 sqlalchemy[asyncio]>=2.0.36
 asyncpg>=0.30.0
-psycopg2-binary>=2.9.10
+aiosqlite>=0.20.0
 alembic>=1.14.0
 
 # Auth
 PyJWT>=2.8.0
-passlib[bcrypt]>=1.7.4
+bcrypt>=4.2.0
 python-multipart>=0.0.18
 
 # AI

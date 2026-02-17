@@ -8,6 +8,7 @@ Core double-entry bookkeeping schema enforcing GAAP principles:
 - Periods can be closed to prevent retroactive changes
 """
 
+import json as _json
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
@@ -16,10 +17,65 @@ from enum import Enum as PyEnum
 from sqlalchemy import (
     Column, String, Text, Numeric, DateTime, Date, Boolean,
     ForeignKey, Enum, CheckConstraint, Index, UniqueConstraint,
-    event,
+    event, TypeDecorator,
 )
-from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import DeclarativeBase, relationship, validates
+
+
+# ── Dialect-agnostic types (PostgreSQL UUID/JSONB → SQLite TEXT fallback) ──
+
+class GUID(TypeDecorator):
+    """Platform-independent UUID type.
+    Uses PostgreSQL's native UUID type, stores as CHAR(36) on SQLite."""
+    impl = String(36)
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+            return dialect.type_descriptor(PG_GUID())
+        return dialect.type_descriptor(String(36))
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value if isinstance(value, uuid.UUID) else uuid.UUID(value)
+        return str(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, uuid.UUID):
+            return value
+        return uuid.UUID(str(value))
+
+
+class JSONType(TypeDecorator):
+    """Platform-independent JSON type.
+    Uses PostgreSQL JSONB natively, stores as TEXT with JSON serialization on SQLite."""
+    impl = Text
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            from sqlalchemy.dialects.postgresql import JSONB
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(Text())
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return value
+        if dialect.name == "postgresql":
+            return value
+        return _json.dumps(value)
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return value
+        if isinstance(value, (dict, list)):
+            return value
+        return _json.loads(value)
 
 
 # ── Base ────────────────────────────────────────────────────
@@ -109,7 +165,7 @@ class PeriodStatus(str, PyEnum):
 class Organization(Base):
     __tablename__ = "organizations"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=False)
     accounting_basis = Column(String(10), nullable=False, default="accrual")
     fiscal_year_start_month = Column(Numeric, nullable=False, default=1)
@@ -125,8 +181,8 @@ class Organization(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     full_name = Column(String(255))
@@ -152,14 +208,14 @@ class Account(Base):
     """
     __tablename__ = "accounts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
     account_number = Column(String(20), nullable=False)
     name = Column(String(255), nullable=False)
     description = Column(Text)
     account_type = Column(Enum(AccountType), nullable=False)
     account_subtype = Column(Enum(AccountSubtype))
-    parent_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True)
+    parent_id = Column(GUID(), ForeignKey("accounts.id"), nullable=True)
     is_active = Column(Boolean, default=True)
     is_system = Column(Boolean, default=False)  # Prevent deletion of core accounts
     normal_balance = Column(String(6), nullable=False)  # "debit" or "credit"
@@ -190,8 +246,8 @@ class JournalEntry(Base):
     """
     __tablename__ = "journal_entries"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
     entry_number = Column(String(20))  # Auto-generated sequence
     entry_date = Column(Date, nullable=False)
     description = Column(Text)
@@ -205,15 +261,15 @@ class JournalEntry(Base):
     ai_query_token_hash = Column(String(64))  # For caching/dedup
 
     # Review tracking
-    reviewed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewed_by = Column(GUID(), ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime, nullable=True)
     review_notes = Column(Text)
 
     # Linked receipt
-    receipt_id = Column(UUID(as_uuid=True), ForeignKey("receipts.id"), nullable=True)
+    receipt_id = Column(GUID(), ForeignKey("receipts.id"), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    created_by = Column(GUID(), ForeignKey("users.id"), nullable=True)
 
     line_items = relationship("JournalLineItem", back_populates="journal_entry", cascade="all, delete-orphan")
     receipt = relationship("Receipt", back_populates="journal_entries")
@@ -231,9 +287,9 @@ class JournalLineItem(Base):
     """
     __tablename__ = "journal_line_items"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    journal_entry_id = Column(UUID(as_uuid=True), ForeignKey("journal_entries.id"), nullable=False)
-    account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    journal_entry_id = Column(GUID(), ForeignKey("journal_entries.id"), nullable=False)
+    account_id = Column(GUID(), ForeignKey("accounts.id"), nullable=False)
     description = Column(Text)
     debit_amount = Column(Numeric(15, 2), nullable=False, default=Decimal("0.00"))
     credit_amount = Column(Numeric(15, 2), nullable=False, default=Decimal("0.00"))
@@ -260,9 +316,9 @@ class BankTransaction(Base):
     """
     __tablename__ = "bank_transactions"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    import_batch_id = Column(UUID(as_uuid=True), nullable=False)  # Groups a single file import
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
+    import_batch_id = Column(GUID(), nullable=False)  # Groups a single file import
     source = Column(Enum(TransactionSource), nullable=False)
 
     # Raw fields from bank export
@@ -276,13 +332,13 @@ class BankTransaction(Base):
 
     # AI-enriched fields
     description_cleaned = Column(Text)
-    suggested_account_id = Column(UUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True)
+    suggested_account_id = Column(GUID(), ForeignKey("accounts.id"), nullable=True)
     ai_confidence = Column(Numeric(5, 4))
     ai_category = Column(String(255))
 
     # Reconciliation
     is_reconciled = Column(Boolean, default=False)
-    journal_entry_id = Column(UUID(as_uuid=True), ForeignKey("journal_entries.id"), nullable=True)
+    journal_entry_id = Column(GUID(), ForeignKey("journal_entries.id"), nullable=True)
     reconciled_at = Column(DateTime)
 
     # Dedup
@@ -305,9 +361,9 @@ class Receipt(Base):
     """
     __tablename__ = "receipts"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
+    uploaded_by = Column(GUID(), ForeignKey("users.id"), nullable=False)
 
     # File storage
     file_path = Column(String(500), nullable=False)  # Path to original image/PDF
@@ -320,7 +376,7 @@ class Receipt(Base):
     total_amount = Column(Numeric(15, 2))
     tax_amount = Column(Numeric(15, 2))
     currency = Column(String(3), default="USD")
-    line_items_json = Column(JSONB)  # [{description, qty, unit_price, amount}]
+    line_items_json = Column(JSONType)  # [{description, qty, unit_price, amount}]
     raw_ocr_text = Column(Text)
 
     # Processing metadata
@@ -347,13 +403,13 @@ class AccountingPeriod(Base):
     """
     __tablename__ = "accounting_periods"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
     name = Column(String(50), nullable=False)  # e.g., "2025-Q1", "2025-01"
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     status = Column(Enum(PeriodStatus), nullable=False, default=PeriodStatus.OPEN)
-    closed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    closed_by = Column(GUID(), ForeignKey("users.id"), nullable=True)
     closed_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
@@ -370,17 +426,17 @@ class AuditLog(Base):
     """
     __tablename__ = "audit_log"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # Null for system/AI actions
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)  # Null for system/AI actions
     action = Column(String(50), nullable=False)  # create, update, delete, approve, void, close_period
     entity_type = Column(String(50), nullable=False)  # journal_entry, account, bank_transaction, etc.
-    entity_id = Column(UUID(as_uuid=True), nullable=False)
-    before_state = Column(JSONB)  # Snapshot before change
-    after_state = Column(JSONB)   # Snapshot after change
+    entity_id = Column(GUID(), nullable=False)
+    before_state = Column(JSONType)  # Snapshot before change
+    after_state = Column(JSONType)   # Snapshot after change
     ip_address = Column(String(45))
     user_agent = Column(String(500))
-    extra_data = Column(JSONB)  # Extra context (e.g., AI confidence, import batch ID)
+    extra_data = Column(JSONType)  # Extra context (e.g., AI confidence, import batch ID)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -399,14 +455,14 @@ class AIQueryLog(Base):
     """
     __tablename__ = "ai_query_log"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=False)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    id = Column(GUID(), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(GUID(), ForeignKey("organizations.id"), nullable=False)
+    user_id = Column(GUID(), ForeignKey("users.id"), nullable=True)
     query_type = Column(String(50), nullable=False)  # classify, nl_query, ocr_enhance
     query_text = Column(Text, nullable=False)
     query_token_hash = Column(String(64), nullable=False)  # SHA-256 of normalized query
     response_text = Column(Text)
-    response_structured = Column(JSONB)  # Parsed response data
+    response_structured = Column(JSONType)  # Parsed response data
     input_tokens = Column(Numeric)
     output_tokens = Column(Numeric)
     cost_usd = Column(Numeric(10, 6))
