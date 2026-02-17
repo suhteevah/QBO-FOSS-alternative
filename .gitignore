@@ -34,6 +34,31 @@ Thumbs.db
 # Uploaded files
 uploads/
 
+# Legacy root-level files (pre-restructure, now in openledger/)
+/ai_service.py
+/cli.py
+/importer.py
+/ledger.py
+/main.py
+/models.py
+/ocr_service.py
+/schemas.py
+/files.zip
+
+# Auto-generated TypeScript build info
+*.tsbuildinfo
+
+# Auto-generated DocSync documentation (regenerated on demand)
+/ai_service.md
+/cli.md
+/importer.md
+/ledger.md
+/main.md
+/models.md
+/ocr_service.md
+/schemas.md
+docs/
+
 # Windows reserved device names (cause git add failures)
 nul
 con
