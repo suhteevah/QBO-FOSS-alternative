@@ -43,7 +43,7 @@ async def create_api_key(
     The `device_info` field is an optional human-readable device identifier.
     """
     # Validate platform
-    valid_platforms = {"android", "ios", "web", "cli"}
+    valid_platforms = {"android", "ios", "web", "cli", "desktop"}
     if data.platform not in valid_platforms:
         raise HTTPException(
             status_code=422,

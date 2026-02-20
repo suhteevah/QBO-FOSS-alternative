@@ -1,16 +1,35 @@
-const BASE = '/api'
+// ── Dynamic Base URL ────────────────────────────────────
+// In web mode (Vite dev/Nginx prod), relative '/api' is proxied to the backend.
+// In desktop mode (Tauri), server_url is set during ServerSetup (e.g. "http://localhost:8000").
+function getBaseUrl(): string {
+  const serverUrl = localStorage.getItem('server_url')
+  if (serverUrl) return `${serverUrl.replace(/\/+$/, '')}/api`
+  return '/api'
+}
 
-async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+// ── Auth Headers ────────────────────────────────────────
+// Priority: API key > JWT token (same logic as mobile AuthInterceptor)
+function getAuthHeaders(): Record<string, string> {
+  const apiKey = localStorage.getItem('api_key')
+  if (apiKey) return { 'X-API-Key': apiKey }
   const token = localStorage.getItem('token')
+  if (token) return { 'Authorization': `Bearer ${token}` }
+  return {}
+}
+
+// ── Core HTTP client ────────────────────────────────────
+async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
+    ...getAuthHeaders(),
     ...(opts.headers as Record<string, string>),
   }
-  if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE}${path}`, { ...opts, headers })
+  const res = await fetch(`${getBaseUrl()}${path}`, { ...opts, headers })
   if (res.status === 401) {
+    // Clear all auth state on unauthorized
     localStorage.removeItem('token')
+    localStorage.removeItem('api_key')
     window.location.href = '/login'
     throw new Error('Unauthorized')
   }
@@ -22,16 +41,16 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 }
 
 function upload<T>(path: string, file: File): Promise<T> {
-  const token = localStorage.getItem('token')
   const form = new FormData()
   form.append('file', file)
-  return fetch(`${BASE}${path}`, {
+  return fetch(`${getBaseUrl()}${path}`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    headers: getAuthHeaders(),
     body: form,
   }).then(async (res) => {
     if (res.status === 401) {
       localStorage.removeItem('token')
+      localStorage.removeItem('api_key')
       window.location.href = '/login'
       throw new Error('Unauthorized')
     }
@@ -41,6 +60,14 @@ function upload<T>(path: string, file: File): Promise<T> {
     }
     return res.json()
   })
+}
+
+// ── Health check (used by ServerSetup) ──────────────────
+export async function checkHealth(serverUrl: string): Promise<{ status: string; version: string }> {
+  const url = `${serverUrl.replace(/\/+$/, '')}/health`
+  const res = await fetch(url)
+  if (!res.ok) throw new Error(`Server responded with ${res.status}`)
+  return res.json()
 }
 
 // ── Auth ────────────────────────────────────────────────
@@ -56,6 +83,31 @@ export const auth = {
       body: JSON.stringify({ email, password, full_name, organization_name }),
     }),
   me: () => request<{ id: string; email: string; full_name: string; role: string; organization_id: string }>('/auth/me'),
+}
+
+// ── API Keys ────────────────────────────────────────────
+export const apiKeys = {
+  create: (name: string, platform: string, deviceInfo?: string, expiresInDays?: number) =>
+    request<{
+      id: string; name: string; key_prefix: string; raw_key: string;
+      platform: string; device_info: string | null;
+      expires_at: string | null; created_at: string;
+    }>('/keys/', {
+      method: 'POST',
+      body: JSON.stringify({
+        name,
+        platform,
+        device_info: deviceInfo || null,
+        expires_in_days: expiresInDays || null,
+      }),
+    }),
+  list: () =>
+    request<Array<{
+      id: string; name: string; key_prefix: string; platform: string;
+      device_info: string | null; expires_at: string | null;
+      last_used_at: string | null; is_revoked: boolean; created_at: string;
+    }>>('/keys/'),
+  revoke: (id: string) => request<{ id: string; revoked: boolean }>(`/keys/${id}`, { method: 'DELETE' }),
 }
 
 // ── Accounts ────────────────────────────────────────────
@@ -153,6 +205,7 @@ export const audit = {
 // ── Consolidated API export ─────────────────────────────
 export const api = {
   auth,
+  apiKeys,
   accounts,
   transactions,
   journal,
