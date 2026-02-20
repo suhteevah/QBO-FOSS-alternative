@@ -32,7 +32,7 @@ struct ApiKeySetupView: View {
 
             TextField("Device Name", text: $viewModel.keyName, prompt: Text("My iPhone"))
                 .textFieldStyle(.roundedBorder)
-                .disableAutocorrection(true)
+                .autocorrectionDisabled()
 
             Spacer().frame(height: 20)
 

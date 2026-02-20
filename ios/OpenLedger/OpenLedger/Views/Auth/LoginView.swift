@@ -34,8 +34,8 @@ struct LoginView: View {
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.emailAddress)
                 .textContentType(.emailAddress)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
 
             Spacer().frame(height: 12)
 

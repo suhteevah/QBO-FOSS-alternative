@@ -33,8 +33,8 @@ struct ServerSetupView: View {
                 .textFieldStyle(.roundedBorder)
                 .keyboardType(.URL)
                 .textContentType(.URL)
-                .autocapitalization(.none)
-                .disableAutocorrection(true)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
 
             Spacer().frame(height: 16)
 

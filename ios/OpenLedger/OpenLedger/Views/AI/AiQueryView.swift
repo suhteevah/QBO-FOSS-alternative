@@ -62,8 +62,8 @@ struct AiQueryView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 12))
 
                             // Results table
-                            if !resp.results.isEmpty {
-                                let columns = Array(resp.results.first?.keys ?? [:].keys)
+                            if let firstRow = resp.results.first {
+                                let columns = Array(firstRow.keys).sorted()
                                 VStack(alignment: .leading, spacing: 0) {
                                     // Header
                                     HStack {

@@ -5,12 +5,12 @@ options:
     iOS: "16.0"
   xcodeVersion: "15.0"
   generateEmptyDirectories: true
+  createIntermediateGroups: true
 
 settings:
   base:
     SWIFT_VERSION: "5.9"
     TARGETED_DEVICE_FAMILY: "1,2"
-    INFOPLIST_FILE: OpenLedger/Info.plist
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
 
 targets:
@@ -21,6 +21,7 @@ targets:
       - path: OpenLedger
         excludes:
           - "**/*.xcassets"
+          - "**/Info.plist"
     resources:
       - path: OpenLedger/Assets.xcassets
     settings:
@@ -31,11 +32,22 @@ targets:
         DEVELOPMENT_TEAM: ""
         CODE_SIGN_STYLE: Automatic
     info:
-      path: OpenLedger/Info.plist
       properties:
         CFBundleDisplayName: OpenLedger
         CFBundleName: OpenLedger
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         NSCameraUsageDescription: "OpenLedger uses the camera to capture receipts for OCR processing"
+        NSPhotoLibraryUsageDescription: "OpenLedger needs photo library access to select receipt images"
